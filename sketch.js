@@ -35,6 +35,7 @@ const chars =
   "・「」『』【】〜。、";
 
 function preload() {
+  console.log("i don't know what this is but its pretty freaking cool i think")
   bg = loadImage("assets/background.jpg");
 }
 
