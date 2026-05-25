@@ -18,19 +18,10 @@ const TEXT_COLORS = [
   [180, 255, 180]
 ];
 
-const chords = [
-  ["C4", "E4", "G4"],
-  ["A3", "C4", "E4"],
-  ["F3", "A3", "C4"],
-  ["G3", "B3", "D4"],
-  ["D3", "F3", "A3"],
-  ["E3", "G3", "B3"],
-  ["B3", "D4", "F#4"],
-  ["C4", "F4", "A4"],
-  ["G3", "C4", "E4"],
-  ["A3", "D4", "F#4"],
-  ["E3", "A3", "C#4"],
-  ["F3", "G3", "C4"]
+const scale = [
+  "C3", "D3", "E3", "F3", "G3", "A3", "B3",
+  "C4", "D4", "E4", "F4", "G4", "A4", "B4",
+  "C5", "D5", "E5", "F5", "G5"
 ];
 
 const chars =
@@ -107,26 +98,22 @@ function playAmbientChord() {
   }
   lastNoteTime = now;
 
-  const chordIndex = constrain(
-    floor(map(mouseX, 0, width, 0, chords.length)),
+  const noteIndex = constrain(
+    floor(map(mouseX, 0, width, 0, scale.length)),
     0,
-    chords.length - 1
+    scale.length - 1
   );
 
-  const chord = chords[chordIndex];
-  const note = weightedNoteFromChord(chord);
-  const volume = map(mouseY, height, 0, 0.03, 0.24);
-  const duration = random(0.18, 0.52);
+  const note = scale[noteIndex];
+  const volume = map(mouseY, height, 0, 0.08, 0.55);
+  
+  // y-axis maps to timbre: top = short bright, bottom = long ambient
+  const timbreFactor = map(mouseY, height, 0, 0.1, 0.8);
+  const attackTime = 0.02;
+  const duration = 0.15 + timbreFactor * 0.4;
 
   const synth = random(synths);
-  synth.play(note, volume, 0, duration);
-}
-
-function weightedNoteFromChord(chord) {
-  const r = random();
-  if (r < 0.62) return chord[0];
-  if (r < 0.88) return chord[1];
-  return chord[2];
+  synth.play(note, volume, attackTime, duration);
 }
 
 function mouseReleased() {
@@ -174,6 +161,7 @@ class TerminalParticle {
     this.char = randomChar();
     this.life = int(random(40, 120));
     this.maxLife = this.life;
+    this.typingDuration = int(this.maxLife * 0.35);
     this.stepTimer = int(random(1, 4));
     this.col = random(TEXT_COLORS);
     this.history = [];
@@ -211,6 +199,8 @@ class TerminalParticle {
   }
 
   display() {
+    const isTyping = this.life > this.maxLife - this.typingDuration;
+    
     for (let i = 0; i < this.history.length; i++) {
       const trail = this.history[i];
       const alpha = map(i, 0, this.history.length, 40, 140);
@@ -218,7 +208,13 @@ class TerminalParticle {
       text(trail.char, trail.x, trail.y);
     }
 
-    const alpha = map(this.life, 0, this.maxLife, 40, 255);
+    let alpha;
+    if (isTyping) {
+      alpha = map(this.life, this.maxLife - this.typingDuration, this.maxLife, 120, 255);
+    } else {
+      alpha = map(this.life, 0, this.maxLife - this.typingDuration, 40, 120);
+    }
+    alpha = constrain(alpha, 40, 255);
     fill(this.col[0], this.col[1], this.col[2], alpha);
     text(this.char, this.x, this.y);
   }
