@@ -1,10 +1,22 @@
 let particles = [];
 let bg;
 
-// ===== AUDIO =====
-let osc;
-let env;
+let synths = [];
 let reverb;
+let lastNoteTime = 0;
+
+let fontSize = 10;
+let cellW;
+let cellH;
+
+const BG_TINT = [28, 28, 28, 170];
+
+const TEXT_COLORS = [
+  [242, 242, 242],
+  [255, 170, 120],
+  [255, 120, 90],
+  [180, 255, 180]
+];
 
 const chords = [
   ["C4", "E4", "G4"],
@@ -15,8 +27,15 @@ const chords = [
   ["E3", "G3", "B3"]
 ];
 
-let currentChord = -1;
-
+const chars =
+  "abcdefghijklmnopqrstuvwxyz0123456789" +
+  "$#@%&*+=<>/[]{}|~-" +
+  "あいうえおかきくけこさしすせそたちつてと" +
+  "なにぬねのはひふへほまみむめもやゆよらりるれろわをん" +
+  "アイウエオカキクケコサシスセソタチツテト" +
+  "ナニヌネノハヒフヘホマミムメモヤユヨラリルレロワヲン" +
+  "東京京都大阪電脳記憶夢愛雨夜光海空心猫音" +
+  "・「」『』【】〜。、";
 
 function preload() {
   bg = loadImage("assets/background.jpg");
@@ -26,7 +45,6 @@ function setup() {
   createCanvas(windowWidth, windowHeight);
 
   frameRate(30);
-
   updateTerminalScale();
 
   textFont("'Noto Sans JP', monospace");
@@ -36,39 +54,35 @@ function setup() {
 
   noStroke();
 
-  // ===== AUDIO SETUP =====
-  osc = new p5.PolySynth(p5.MonoSynth);
-
-  reverb = new p5.Reverb();
-  reverb.process(osc, 3, 2);
-
   userStartAudio();
+  reverb = new p5.Reverb();
+
+  for (let i = 0; i < 8; i++) {
+    const synth = new p5.MonoSynth();
+    synths.push(synth);
+    reverb.process(synth, 3, 2);
+  }
 }
 
 function draw() {
-
-  // ===== BG =====
   image(bg, 0, 0, width, height);
-
   fill(...BG_TINT);
   rect(0, 0, width, height);
 
   drawGrid();
 
-  // ===== PARTICLES =====
   if (mouseIsPressed) {
-
-    for (let i = 0; i < 14; i++) {
-      particles.push(new TerminalParticle(mouseX, mouseY));
+    for (let i = 0; i < 8; i++) {
+      const spawnX = mouseX + random(-120, 120);
+      const spawnY = mouseY + random(-30, 30);
+      particles.push(new TerminalParticle(spawnX, spawnY));
     }
 
-    playMappedChord();
+    playAmbientChord();
   }
 
   for (let i = particles.length - 1; i >= 0; i--) {
-
     const p = particles[i];
-
     p.update();
     p.display();
 
@@ -80,53 +94,144 @@ function draw() {
   drawPrompt();
 }
 
-// ===== AUDIO =====
+function playAmbientChord() {
+  const now = millis();
+  if (now - lastNoteTime < 70) {
+    return;
+  }
+  lastNoteTime = now;
 
-function playMappedChord() {
-
-  // map X to chord index
-  let chordIndex = floor(
-    map(mouseX, 0, width, 0, chords.length)
+  const chordIndex = constrain(
+    floor(map(mouseX, 0, width, 0, chords.length)),
+    0,
+    chords.length - 1
   );
 
-  chordIndex = constrain(chordIndex, 0, chords.length - 1);
+  const chord = chords[chordIndex];
+  const note = weightedNoteFromChord(chord);
+  const volume = map(mouseY, height, 0, 0.03, 0.24);
+  const duration = random(0.18, 0.52);
 
-  // map Y to volume
-  // top = loud, bottom = quiet
-  // increased overall volume range (min, max)
-  let volume = map(mouseY, height, 0, 0.05, 0.6);
+  const synth = random(synths);
+  synth.play(note, volume, 0, duration);
+}
 
-  // only retrigger if chord changes
-  if (chordIndex !== currentChord) {
-
-    currentChord = chordIndex;
-
-    let chord = chords[chordIndex];
-
-    for (let note of chord) {
-
-      osc.play(
-        note,
-        volume,
-        0,
-        0.4
-      );
-    }
-  }
+function weightedNoteFromChord(chord) {
+  const r = random();
+  if (r < 0.62) return chord[0];
+  if (r < 0.88) return chord[1];
+  return chord[2];
 }
 
 function mouseReleased() {
-  currentChord = -1;
+  // no-op: note triggering is throttled and stateless
 }
 
-// ===== PARTICLES =====
-// Terminal-specific classes and helpers moved to terminal.js
+function updateTerminalScale() {
+  cellW = fontSize * 0.72;
+  cellH = fontSize * 1.45;
+}
+
+function drawGrid() {
+  stroke(255, 255, 255, 8);
+  strokeWeight(1);
+
+  for (let x = 0; x < width; x += cellW) {
+    line(x, 0, x, height);
+  }
+
+  for (let y = 0; y < height; y += cellH) {
+    line(0, y, width, y);
+  }
+
+  noStroke();
+}
+
+function drawPrompt() {
+  fill(255, 140, 110, 120);
+  text("theo@nagarake:~$ ./memory.exe", 16, 16);
+}
+
+function randomChar() {
+  return chars.charAt(floor(random(chars.length)));
+}
+
+class TerminalParticle {
+  constructor(x, y) {
+    this.x = snapX(x + random(-140, 140));
+    this.y = snapY(y + random(-40, 40));
+
+    const direction = random() < 0.5 ? -1 : 1;
+    this.vx = direction * random(0.8, 2.0);
+    this.vy = random(-0.25, 0.25);
+
+    this.char = randomChar();
+    this.life = int(random(40, 120));
+    this.maxLife = this.life;
+    this.stepTimer = int(random(1, 4));
+    this.col = random(TEXT_COLORS);
+    this.history = [];
+  }
+
+  update() {
+    this.life--;
+    this.stepTimer--;
+
+    if (this.stepTimer <= 0) {
+      this.history.push({ x: this.x, y: this.y, char: this.char });
+      if (this.history.length > 4) {
+        this.history.shift();
+      }
+
+      this.x += this.vx * cellW;
+      if (random() < 0.18) {
+        this.y += this.vy * cellH;
+      }
+
+      if (random() < 0.08) {
+        this.vx += random(-0.18, 0.18);
+        this.vx = constrain(this.vx, -2, 2);
+      }
+
+      if (random() < 0.12) {
+        this.char = randomChar();
+      }
+
+      this.x = constrain(this.x, -cellW * 2, width + cellW * 2);
+      this.y = constrain(this.y, 0, height - cellH);
+
+      this.stepTimer = int(random(2, 5));
+    }
+  }
+
+  display() {
+    for (let i = 0; i < this.history.length; i++) {
+      const trail = this.history[i];
+      const alpha = map(i, 0, this.history.length, 40, 140);
+      fill(this.col[0], this.col[1], this.col[2], alpha);
+      text(trail.char, trail.x, trail.y);
+    }
+
+    const alpha = map(this.life, 0, this.maxLife, 40, 255);
+    fill(this.col[0], this.col[1], this.col[2], alpha);
+    text(this.char, this.x, this.y);
+  }
+
+  dead() {
+    return this.life <= 0;
+  }
+}
+
+function snapX(x) {
+  return Math.floor(x / cellW) * cellW;
+}
+
+function snapY(y) {
+  return Math.floor(y / cellH) * cellH;
+}
 
 function windowResized() {
-
   resizeCanvas(windowWidth, windowHeight);
-
   updateTerminalScale();
-
   textSize(fontSize);
 }
